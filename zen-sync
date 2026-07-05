@@ -893,6 +893,41 @@ push_remote() {
 }
 
 # ─── Pull ─────────────────────────────────────────────────────────────
+# ─── Preserve per-machine extension identity across prefs.js sync ─────
+# prefs.js carries "extensions.webextensions.uuids": a map of extension id to a
+# random moz-extension:// UUID that Zen assigns when the extension is installed
+# on THIS machine. That UUID is the key to the extension's local storage. When a
+# pull overwrites prefs.js with another machine's copy, the map is replaced and
+# every extension is detached from its data — which leaves request-blocking
+# extensions (uBlock Origin, DuckDuckGo, etc.) in a broken state where they
+# cancel every request and the browser can no longer open any URL.
+#
+# Fix: capture this machine's map before the pull, then splice it back into the
+# imported prefs.js so extensions stay bound to their own local storage.
+EXT_UUIDS_KEY='^user_pref("extensions.webextensions.uuids"'
+
+capture_local_extension_uuids() {
+    ZEN_SYNC_LOCAL_EXT_UUIDS=""
+    [[ -f "$LOCAL_PROFILE/prefs.js" ]] || return 0
+    ZEN_SYNC_LOCAL_EXT_UUIDS=$(grep -m1 "$EXT_UUIDS_KEY" "$LOCAL_PROFILE/prefs.js" 2>/dev/null || true)
+}
+
+restore_local_extension_uuids() {
+    local prefs="$LOCAL_PROFILE/prefs.js"
+    [[ -f "$prefs" ]] || return 0
+    local bak="$prefs.zen-sync-uuids.bak"
+    cp "$prefs" "$bak" || return 0
+    # Rewrite prefs.js in place (preserves file permissions): drop the imported
+    # map, then re-append this machine's own map if it had one.
+    {
+        grep -v "$EXT_UUIDS_KEY" "$bak" 2>/dev/null || true
+        if [[ -n "${ZEN_SYNC_LOCAL_EXT_UUIDS:-}" ]]; then
+            printf '%s\n' "$ZEN_SYNC_LOCAL_EXT_UUIDS"
+        fi
+    } > "$prefs"
+    rm -f "$bak"
+}
+
 cmd_pull() {
     load_config
     local restart=false
@@ -901,6 +936,9 @@ cmd_pull() {
         [[ "$arg" == "--restart" ]] && restart=true
         [[ "$arg" == "--spaces-only" ]] && spaces_only=true
     done
+
+    # Remember this machine's extension UUID map before prefs.js is overwritten.
+    [[ "$spaces_only" == "true" ]] || capture_local_extension_uuids
 
     if [[ "$MODE" == "ssh" ]]; then
         pull_ssh "$restart" "$spaces_only"
@@ -934,6 +972,9 @@ pull_ssh() {
             fail "$f (not found)"
         fi
     done
+
+    # Keep this machine's extension UUID map (prefs.js was just overwritten).
+    [[ "$spaces_only" == "true" ]] || restore_local_extension_uuids
 
     printf "\n"
     [[ "$restart" == "true" ]] && zen_open_local
@@ -1010,6 +1051,9 @@ pull_remote() {
         size=$(echo "$result" | "$PYTHON_BIN" -c "import sys,json; print(json.load(sys.stdin)['size'])")
         ok "Downloaded $(human_bytes "$size")"
     fi
+
+    # Keep this machine's extension UUID map (prefs.js was just overwritten).
+    [[ "$spaces_only" == "true" ]] || restore_local_extension_uuids
 
     printf "\n"
     [[ "$restart" == "true" ]] && zen_open_local
