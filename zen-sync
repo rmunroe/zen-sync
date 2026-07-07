@@ -589,9 +589,16 @@ init_r2() {
     local test_config
     test_config=$(printf '{"account_id":"%s","access_key":"%s","secret_key":"%s","bucket":"%s"}' \
         "$account_id" "$access_key" "$secret_key" "$bucket")
-    if "$PYTHON_BIN" "$cloud_py" test "$test_config" >/dev/null 2>&1; then
+    local test_output
+    if test_output=$("$PYTHON_BIN" "$cloud_py" test "$test_config" 2>&1); then
         ok "R2 connected"
     else
+        if [[ -n "$test_output" ]]; then
+            dim "  backend error:"
+            while IFS= read -r line; do
+                [[ -n "$line" ]] && dim "  $line"
+            done <<< "$test_output"
+        fi
         die "could not connect to R2. Check your credentials and bucket name."
     fi
 
