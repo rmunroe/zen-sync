@@ -404,6 +404,7 @@ find_local_profile() {
 
     local candidates=(
         "$HOME/.zen"
+        "$HOME/.config/zen"
         "$HOME/.var/app/app.zen_browser.zen/.zen"
         "$HOME/snap/zen-browser/common/.zen"
         "$HOME/Library/Application Support/zen"
@@ -541,7 +542,7 @@ init_ssh() {
     step "  ⟳" "Finding remote profile..."
     local remote_profile
     remote_profile=$(ssh "$user@$host" '
-        for base in "$HOME/.zen" "$HOME/.var/app/app.zen_browser.zen/.zen" "$HOME/snap/zen-browser/common/.zen" "$HOME/Library/Application Support/zen" "$APPDATA/zen" "$HOME/AppData/Roaming/zen"; do
+        for base in "$HOME/.zen" "$HOME/.config/zen" "$HOME/.var/app/app.zen_browser.zen/.zen" "$HOME/snap/zen-browser/common/.zen" "$HOME/Library/Application Support/zen" "$APPDATA/zen" "$HOME/AppData/Roaming/zen"; do
             [ -d "$base" ] || continue
             found=$(find "$base" -maxdepth 3 -type f -name "zen-sessions.jsonlz4" 2>/dev/null | head -1)
             if [ -n "$found" ]; then
